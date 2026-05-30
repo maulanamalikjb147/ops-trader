@@ -82,9 +82,18 @@ export default function Settings() {
   };
 
   const addExchange = async (data) => {
-    await axios.post(`${API}/exchanges`, data, { withCredentials: true });
-    fetchAll();
-    setAddExch(null);
+    // Returns the error message string when it fails (to surface inside the form).
+    try {
+      await axios.post(`${API}/exchanges`, data, { withCredentials: true });
+      await fetchAll();
+      setAddExch(null);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 2500);
+      return null;
+    } catch (e) {
+      const msg = e?.response?.data?.detail || e?.message || "Failed to save exchange";
+      return msg;
+    }
   };
 
   const deleteExchange = async (id) => {
@@ -412,18 +421,37 @@ function NumberField({ label, value, onChange, min, max, step = 1, testId }) {
 
 function ApiKeyField({ label, value, onChange, placeholder, testId }) {
   const [show, setShow] = useState(false);
+  // Masked values from backend look like "abcd***" (4 char + "***").
+  // Backend skips values ending with "***" on save → preserved if user doesn't touch.
+  const isMasked = typeof value === "string" && value.endsWith("***");
+
+  const handleFocus = (e) => {
+    // Auto-select all on focus so paste replaces the masked stub cleanly.
+    e.target.select();
+  };
+
   return (
     <div>
-      <label className="block text-[10px] uppercase tracking-widest text-[#8a9bc2] mb-1">{label}</label>
+      <div className="flex items-center justify-between mb-1">
+        <label className="block text-[10px] uppercase tracking-widest text-[#8a9bc2]">{label}</label>
+        {isMasked && (
+          <span className="text-[9px] text-[#00ff88] tracking-widest" data-testid={`${testId}-saved-indicator`}>
+            ✓ SAVED — paste to replace
+          </span>
+        )}
+      </div>
       <div className="flex gap-1">
         <input
           data-testid={testId}
           type={show ? "text" : "password"}
           value={value}
           onChange={(e) => onChange(e.target.value)}
+          onFocus={handleFocus}
           placeholder={placeholder}
+          autoComplete="off"
+          spellCheck={false}
           className="flex-1 px-2 py-1.5 text-xs text-[#e0e8ff] outline-none"
-          style={{ background: "#0a0e1a", border: "1px solid #1a2040" }}
+          style={{ background: "#0a0e1a", border: `1px solid ${isMasked ? "#00ff8855" : "#1a2040"}` }}
         />
         <button onClick={() => setShow(!show)} className="text-[10px] px-2 text-[#8a9bc2]" style={{ border: "1px solid #1a2040" }}>
           {show ? "HIDE" : "SHOW"}
@@ -584,29 +612,66 @@ function ExchangeRow({ exchange, onToggle, onDelete }) {
 
 function AddExchangeForm({ options, onSave, onCancel }) {
   const [form, setForm] = useState({ name: options[0]?.name || "", api_key: "", api_secret: "", passphrase: "", demo_balance: 10000 });
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
   const selected = EXCHANGE_OPTIONS.find((o) => o.name === form.name);
+
+  // Live mode requires API key + secret to be filled; OKX additionally needs a passphrase.
+  const needsKeys = selected?.mode === "live";
+  const missingFields = needsKeys && (
+    !form.api_key.trim() ||
+    !form.api_secret.trim() ||
+    (form.name === "okx" && !form.passphrase.trim())
+  );
+
+  const handleSave = async () => {
+    setError("");
+    if (missingFields) {
+      setError("API Key, Secret" + (form.name === "okx" ? " and Passphrase" : "") + " are required for live exchanges");
+      return;
+    }
+    setSaving(true);
+    const errMsg = await onSave({ ...form, tag: selected?.tag || form.name.toUpperCase(), mode: selected?.mode || "live" });
+    setSaving(false);
+    if (errMsg) setError(errMsg);
+  };
+
   return (
     <div className="p-3 space-y-2" style={{ border: "1px solid #00d4ff", background: "#0f1423" }}>
-      <div className="text-[10px] text-[#00d4ff] mb-2">ADD EXCHANGE</div>
+      <div className="flex items-center justify-between mb-2">
+        <span className="text-[10px] text-[#00d4ff] tracking-widest">ADD EXCHANGE</span>
+        {selected?.mode === "live" && <span className="text-[9px] text-[#ff3366] tracking-widest">LIVE MODE — real money</span>}
+        {selected?.mode === "demo" && <span className="text-[9px] text-[#00ff88] tracking-widest">DEMO — paper trading</span>}
+      </div>
       <div>
         <label className="block text-[10px] text-[#8a9bc2] mb-1">Exchange</label>
-        <select value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="w-full px-2 py-1.5 text-xs outline-none" style={{ background: "#0a0e1a", border: "1px solid #1a2040", color: "#e0e8ff" }}>
+        <select value={form.name} onChange={(e) => { setForm({ ...form, name: e.target.value }); setError(""); }} className="w-full px-2 py-1.5 text-xs outline-none" style={{ background: "#0a0e1a", border: "1px solid #1a2040", color: "#e0e8ff" }}>
           {options.map((o) => <option key={o.name} value={o.name}>{o.tag}</option>)}
         </select>
       </div>
       {selected?.mode === "live" && (
         <>
-          <input value={form.api_key} onChange={(e) => setForm({ ...form, api_key: e.target.value })} placeholder="API Key" className="w-full px-2 py-1.5 text-xs outline-none" style={{ background: "#0a0e1a", border: "1px solid #1a2040", color: "#e0e8ff" }} />
-          <input value={form.api_secret} onChange={(e) => setForm({ ...form, api_secret: e.target.value })} placeholder="API Secret" type="password" className="w-full px-2 py-1.5 text-xs outline-none" style={{ background: "#0a0e1a", border: "1px solid #1a2040", color: "#e0e8ff" }} />
-          {form.name === "okx" && <input value={form.passphrase} onChange={(e) => setForm({ ...form, passphrase: e.target.value })} placeholder="Passphrase (OKX)" className="w-full px-2 py-1.5 text-xs outline-none" style={{ background: "#0a0e1a", border: "1px solid #1a2040", color: "#e0e8ff" }} />}
+          <input data-testid="exch-api-key" value={form.api_key} onChange={(e) => setForm({ ...form, api_key: e.target.value })} placeholder="API Key (required)" autoComplete="off" spellCheck={false} className="w-full px-2 py-1.5 text-xs outline-none" style={{ background: "#0a0e1a", border: "1px solid #1a2040", color: "#e0e8ff" }} />
+          <input data-testid="exch-api-secret" value={form.api_secret} onChange={(e) => setForm({ ...form, api_secret: e.target.value })} placeholder="API Secret (required)" type="password" autoComplete="off" spellCheck={false} className="w-full px-2 py-1.5 text-xs outline-none" style={{ background: "#0a0e1a", border: "1px solid #1a2040", color: "#e0e8ff" }} />
+          {form.name === "okx" && <input data-testid="exch-passphrase" value={form.passphrase} onChange={(e) => setForm({ ...form, passphrase: e.target.value })} placeholder="Passphrase (required for OKX)" autoComplete="off" spellCheck={false} className="w-full px-2 py-1.5 text-xs outline-none" style={{ background: "#0a0e1a", border: "1px solid #1a2040", color: "#e0e8ff" }} />}
         </>
       )}
       {selected?.mode === "demo" && (
-        <input value={form.demo_balance} onChange={(e) => setForm({ ...form, demo_balance: parseFloat(e.target.value) })} placeholder="Demo Balance (USDT)" type="number" className="w-full px-2 py-1.5 text-xs outline-none" style={{ background: "#0a0e1a", border: "1px solid #1a2040", color: "#e0e8ff" }} />
+        <input data-testid="exch-demo-balance" value={form.demo_balance} onChange={(e) => setForm({ ...form, demo_balance: parseFloat(e.target.value || "0") })} placeholder="Demo Balance (USDT)" type="number" className="w-full px-2 py-1.5 text-xs outline-none" style={{ background: "#0a0e1a", border: "1px solid #1a2040", color: "#e0e8ff" }} />
+      )}
+      {error && (
+        <div className="text-[10px] text-[#ff3366] py-1" data-testid="exch-form-error">✗ {error}</div>
       )}
       <div className="flex gap-2 pt-1">
-        <button onClick={() => onSave({ ...form, tag: selected?.tag || form.name.toUpperCase(), mode: selected?.mode || "live" })} className="btn-primary text-[10px] px-3 py-1 flex-1">SAVE</button>
-        <button onClick={onCancel} className="btn-danger text-[10px] px-3 py-1">CANCEL</button>
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          data-testid="exch-save-btn"
+          className="btn-primary text-[11px] px-3 py-1.5 flex-1 disabled:opacity-50 font-bold"
+        >
+          {saving ? "SAVING..." : "SAVE EXCHANGE"}
+        </button>
+        <button onClick={onCancel} disabled={saving} data-testid="exch-cancel-btn" className="btn-danger text-[11px] px-3 py-1.5 disabled:opacity-50">CANCEL</button>
       </div>
     </div>
   );
