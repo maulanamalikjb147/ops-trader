@@ -1,0 +1,66 @@
+{
+  "design_system": {
+    "theme": "DARK",
+    "archetype": "Retro-Futurism / Control Room (Terminal)",
+    "rationale": "The user has strictly defined a Bloomberg Terminal aesthetic. This requires prioritizing data density, absolute structural clarity, and high-contrast monospaced typography over decorative whitespace or organic shapes. Aesthetics are stripped down to pure functional utility."
+  },
+  "colors": {
+    "background": "#0a0e1a",
+    "surface": "#0f1423",
+    "surface_hover": "#171d30",
+    "primary": "#00d4ff",
+    "secondary": "#0066ff",
+    "profit": "#00ff88",
+    "loss": "#ff3366",
+    "text_primary": "#e0e8ff",
+    "text_secondary": "#8a9bc2",
+    "border": "#1a2040"
+  },
+  "typography": {
+    "font_family": "'JetBrains Mono', monospace",
+    "rules": {
+      "h1": "text-xl font-bold tracking-tight text-[#e0e8ff]",
+      "h2": "text-lg font-semibold tracking-tight text-[#e0e8ff]",
+      "h3": "text-base font-medium text-[#e0e8ff]",
+      "body": "text-sm text-[#e0e8ff] leading-snug",
+      "small_data": "text-xs text-[#e0e8ff] tabular-nums",
+      "overline": "text-[10px] uppercase tracking-[0.2em] text-[#8a9bc2]"
+    }
+  },
+  "layout_and_spacing": {
+    "strategy": "The 'Control Room' Grid",
+    "density": "High. Use compact padding (p-2 to p-4). Screen real estate must be maximized for dense data display.",
+    "borders": "Visible skeleton. Use 1px solid borders (#1a2040) around all distinct panels and grid items to define boundaries sharply.",
+    "radius": "rounded-none. Absolutely no soft corners.",
+    "surfaces": "Flat, solid colors only. No glassmorphism, no drop shadows, no gradients."
+  },
+  "components": {
+    "panels": "border border-[#1a2040] bg-[#0a0e1a] flex flex-col h-full overflow-hidden",
+    "tables": "w-full text-left text-xs. th with border-b border-[#1a2040] text-[#8a9bc2] font-normal py-1.5 px-2. td py-1.5 px-2 tabular-nums.",
+    "buttons": "Square edges, dense padding (px-3 py-1). Action buttons (Close, TP, SL, BEP) use 1px solid border matching their semantic color (e.g., border-[#00d4ff] text-[#00d4ff] hover:bg-[#00d4ff]/10).",
+    "tabs": "Flat layout. Active tab gets text-[#00d4ff] and border-b-2 border-[#00d4ff]. Inactive gets text-[#8a9bc2].",
+    "tags": "bg-[#0f1423] border border-[#1a2040] text-[#e0e8ff] text-[10px] px-1.5 py-0.5 rounded-none uppercase",
+    "signal_log": "Terminal-style feed. bg-[#0a0e1a] border border-[#1a2040] p-2 overflow-y-auto font-mono text-xs space-y-1. Success lines in #00ff88, info in #00d4ff, errors in #ff3366."
+  },
+  "interactions_and_motion": {
+    "hover": "Instant or very fast (100ms) transitions. Subtle background shifts to #171d30.",
+    "active": "Border color highlights.",
+    "data_update": "Critical: Implement CSS keyframe 'flash' animations (green/red background tint fading out over 500ms) for real-time WebSocket tick updates on active positions and PNL."
+  },
+  "media": {
+    "image_urls": [],
+    "notes": "Zero imagery. Dashboard relies entirely on typography, color, geometric layouts, and pure functional data visualization."
+  },
+  "testing": {
+    "rules": "All interactive and key informational elements MUST include data-testid attributes formatted as kebab-case-role (e.g., data-testid='close-position-btn-btc')."
+  },
+  "instructions_to_main_agent": [
+    "Build strictly in React (.js/.jsx) with Tailwind CSS.",
+    "Adhere strictly to the provided hex codes. Do NOT use default Tailwind colors (e.g., slate, blue, green) unless they perfectly match.",
+    "Ensure 'JetBrains Mono' is imported globally and forced on the entire application (body, buttons, inputs).",
+    "Structure the dashboard using CSS Grid to fill the viewport (h-screen) with a rigid panel layout, avoiding full-page window scrolling.",
+    "Use Shadcn/UI primitives if needed, but strip ALL default rounded corners (rounded-md/lg -> rounded-none) and shadow effects to maintain the terminal aesthetic.",
+    "Charts should be integrated using lightweight libraries like Recharts, styled with transparent backgrounds, cyan/blue lines, and green/red candles. Remove grid axes lines or color them faint #1a2040.",
+    "Signal logs must look like a raw console/terminal output. Active positions must auto-calculate visual PNL strictly in #00ff88 (Profit) and #ff3366 (Loss)."
+  ]
+}
