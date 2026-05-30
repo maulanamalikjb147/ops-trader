@@ -87,6 +87,16 @@ async def init_db():
     if not cfg_exists:
         cfg = BotConfig()
         await db.bot_config.insert_one(cfg.model_dump())
+    else:
+        # Migrate: add any new fields that don't exist yet
+        new_fields = {}
+        defaults = BotConfig().model_dump()
+        for k, v in defaults.items():
+            if k not in cfg_exists:
+                new_fields[k] = v
+        if new_fields:
+            await db.bot_config.update_one({}, {"$set": new_fields})
+            logger.info(f"Config migrated: added fields {list(new_fields.keys())}")
     await seed_admin(db)
     logger.info("Database initialized")
 

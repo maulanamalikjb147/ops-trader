@@ -48,6 +48,8 @@ export default function SignalCard({ signal, compact = false }) {
             <span className={`text-[10px] font-bold ${isWin ? "text-[#00ff88]" : "text-[#ff3366]"}`}>
               {signal.close_reason}
             </span>
+          ) : signal.signal_only ? (
+            <span className="text-[10px] font-bold text-[#8a9bc2]" style={{ border: "1px solid #8a9bc2", padding: "1px 4px" }}>SIGNAL ONLY</span>
           ) : (
             <span className="text-[10px] text-[#00d4ff]">OPEN</span>
           )}

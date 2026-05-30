@@ -63,6 +63,7 @@ class Signal(BaseModel):
     position_size: float = 0.0
     margin: float = 0.0
     leverage: int = 1
+    signal_only: bool = False
     tp1_hit: bool = False
     partial_closed: bool = False
     created_at: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
@@ -120,6 +121,8 @@ class BotConfig(BaseModel):
     is_paused: bool = False
     active_mode: str = "demo"
     active_exchange: str = "demo"
+    auto_trade_demo: bool = True
+    auto_trade_live: bool = False
     telegram_token: str = ""
     telegram_chat_id: str = ""
     notion_api_key: str = ""

@@ -23,8 +23,10 @@ export default function Settings() {
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [addExch, setAddExch] = useState(null);
+  const [loadError, setLoadError] = useState(false);
 
   const fetchAll = async () => {
+    setLoadError(false);
     try {
       const [cfg, exch, status] = await Promise.all([
         axios.get(`${API}/config`, { withCredentials: true }),
@@ -34,7 +36,19 @@ export default function Settings() {
       setConfig(cfg.data);
       setExchanges(exch.data);
       setBotStatus(status.data);
-    } catch (_) {}
+    } catch (e) {
+      console.error("Settings fetch failed:", e);
+      setLoadError(true);
+      // Set defaults so page doesn't stay stuck
+      if (!config) setConfig({
+        swing_enabled: true, scalp_enabled: false, hybrid_enabled: true,
+        auto_bep: true, partial_close: true, partial_percent: 50,
+        default_leverage: 5, risk_percent: 1.0, max_open_positions: 3,
+        max_margin: 500, swing_min_score: 4, scalp_min_score: 3,
+        hybrid_min_score: 4, coins_to_scan: [], active_mode: "demo",
+        active_exchange: "demo", auto_trade_demo: true, auto_trade_live: false,
+      });
+    }
   };
 
   useEffect(() => { fetchAll(); }, []);
@@ -78,7 +92,13 @@ export default function Settings() {
     setExchanges((prev) => prev.filter((e) => e.id !== id));
   };
 
-  if (!config) return <Layout><div className="flex items-center justify-center h-full text-[#8a9bc2] text-xs">Loading...</div></Layout>;
+  if (!config) return <Layout><div className="flex items-center justify-center h-full">
+    <div className="text-center">
+      <div className="w-6 h-6 border-2 border-[#00d4ff] border-t-transparent rounded-full animate-spin mx-auto mb-2" />
+      <p className="text-[#8a9bc2] text-xs">Loading settings...</p>
+      {loadError && <button onClick={fetchAll} className="mt-3 btn-primary text-[10px] px-3 py-1">RETRY</button>}
+    </div>
+  </div></Layout>;
 
   return (
     <Layout>
@@ -250,6 +270,83 @@ export default function Settings() {
                   </button>
                 </div>
               </Section>
+
+              <Section title="AUTO TRADE">
+                <div className="text-[10px] text-[#8a9bc2] mb-3 leading-relaxed">
+                  When <span className="text-[#00ff88]">ON</span>: signal detected → order placed automatically.<br />
+                  When <span className="text-[#ff3366]">OFF</span>: signal shown & notified, but no order placed.
+                </div>
+                <div className="space-y-3">
+                  {/* Demo Auto Trade */}
+                  <div className="p-3" style={{ border: "1px solid #1a2040", background: "#0a0e1a" }}>
+                    <div className="flex items-center justify-between mb-1">
+                      <div>
+                        <div className="text-xs font-bold text-[#e0e8ff]">Demo Mode Auto Trade</div>
+                        <div className="text-[10px] text-[#8a9bc2]">Paper trading orders placed automatically</div>
+                      </div>
+                      <button
+                        data-testid="toggle-auto-trade-demo"
+                        onClick={() => saveConfig({ auto_trade_demo: !config.auto_trade_demo })}
+                        className="flex items-center gap-2 px-3 py-1.5 text-xs font-bold transition-all"
+                        style={{
+                          border: `1px solid ${config.auto_trade_demo ? "#00ff88" : "#ff3366"}`,
+                          background: config.auto_trade_demo ? "rgba(0,255,136,0.1)" : "rgba(255,51,102,0.1)",
+                          color: config.auto_trade_demo ? "#00ff88" : "#ff3366",
+                          minWidth: "80px"
+                        }}
+                      >
+                        <span className={`w-2 h-2 rounded-full ${config.auto_trade_demo ? "bg-[#00ff88]" : "bg-[#ff3366]"}`} />
+                        {config.auto_trade_demo ? "ON" : "OFF"}
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Live Auto Trade */}
+                  <div className="p-3" style={{ border: `1px solid ${config.auto_trade_live ? "#ff3366" : "#1a2040"}`, background: "#0a0e1a" }}>
+                    <div className="flex items-center justify-between mb-1">
+                      <div>
+                        <div className="text-xs font-bold text-[#e0e8ff]">Live Mode Auto Trade</div>
+                        <div className="text-[10px] text-[#8a9bc2]">
+                          Real money orders placed automatically
+                          {config.auto_trade_live && <span className="text-[#ff3366] ml-1 font-bold">— USE WITH CAUTION!</span>}
+                        </div>
+                      </div>
+                      <button
+                        data-testid="toggle-auto-trade-live"
+                        onClick={() => saveConfig({ auto_trade_live: !config.auto_trade_live })}
+                        className="flex items-center gap-2 px-3 py-1.5 text-xs font-bold transition-all"
+                        style={{
+                          border: `1px solid ${config.auto_trade_live ? "#ff3366" : "#8a9bc2"}`,
+                          background: config.auto_trade_live ? "rgba(255,51,102,0.15)" : "rgba(138,155,194,0.1)",
+                          color: config.auto_trade_live ? "#ff3366" : "#8a9bc2",
+                          minWidth: "80px"
+                        }}
+                      >
+                        <span className={`w-2 h-2 rounded-full ${config.auto_trade_live ? "bg-[#ff3366] pulse" : "bg-[#8a9bc2]"}`} />
+                        {config.auto_trade_live ? "ON" : "OFF"}
+                      </button>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Mode summary */}
+                <div className="mt-3 p-2 text-[10px]" style={{ border: "1px solid #1a2040", background: "#0f1423" }}>
+                  <div className="text-[#8a9bc2] mb-1 uppercase tracking-widest text-[9px]">Current Behavior</div>
+                  <div className="flex items-center gap-2">
+                    <span className={`w-1.5 h-1.5 rounded-full ${config.auto_trade_demo ? "bg-[#00ff88]" : "bg-[#8a9bc2]"}`} />
+                    <span className={config.auto_trade_demo ? "text-[#00ff88]" : "text-[#8a9bc2]"}>
+                      Demo: {config.auto_trade_demo ? "Auto execute orders" : "Signal only (no order)"}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-2 mt-1">
+                    <span className={`w-1.5 h-1.5 rounded-full ${config.auto_trade_live ? "bg-[#ff3366] pulse" : "bg-[#8a9bc2]"}`} />
+                    <span className={config.auto_trade_live ? "text-[#ff3366]" : "text-[#8a9bc2]"}>
+                      Live: {config.auto_trade_live ? "Auto execute REAL orders" : "Signal only (no order)"}
+                    </span>
+                  </div>
+                </div>
+              </Section>
+
               <Section title="INTEGRATIONS STATUS">
                 <div className="space-y-1.5 text-xs">
                   <StatusRow label="Telegram" active={botStatus?.telegram_enabled} />

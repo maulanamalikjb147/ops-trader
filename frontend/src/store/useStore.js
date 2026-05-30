@@ -57,9 +57,10 @@ const useStore = create((set, get) => ({
               type: pnl >= 0 ? "profit" : "loss",
             });
           } else if (event === "signal:new") {
+            const isSignalOnly = data.signal_only || data.position_size === 0;
             get().addLogEntry({
               time: new Date().toLocaleTimeString("en-GB"),
-              text: `${data.side === "LONG" ? "▲" : "▼"} ${data.pair} ${data.side} @ ${data.entry_price?.toFixed?.(4) || data.entry_price} | ${data.exchange?.toUpperCase() || "DEMO"} | score:${data.confidence}`,
+              text: `${data.side === "LONG" ? "▲" : "▼"} ${data.pair} ${data.side} @ ${data.entry_price?.toFixed?.(4) || data.entry_price} | ${data.exchange?.toUpperCase() || "DEMO"} | score:${data.confidence}${isSignalOnly ? " [SIGNAL ONLY]" : ""}`,
               type: data.side === "LONG" ? "long" : "short",
             });
           } else if (event === "bep:activated") {

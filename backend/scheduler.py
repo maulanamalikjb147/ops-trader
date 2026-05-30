@@ -80,17 +80,66 @@ class SignalBotScheduler:
         if existing:
             return
 
-        if not await self._check_limits(config):
+        mode = config.get("active_mode", "demo")
+        auto_trade_demo = config.get("auto_trade_demo", True)
+        auto_trade_live = config.get("auto_trade_live", False)
+
+        # Determine if this is signal-only (no order placement)
+        signal_only = (mode == "demo" and not auto_trade_demo) or \
+                      (mode == "live" and not auto_trade_live)
+
+        if not signal_only and not await self._check_limits(config):
             return
 
         exchange_name = config.get("active_exchange", "demo")
-        mode = config.get("active_mode", "demo")
         leverage = config.get("default_leverage", 5)
         risk_percent = config.get("risk_percent", 1.0)
         max_margin = config.get("max_margin", 500.0)
         auto_bep = config.get("auto_bep", True)
         partial_close = config.get("partial_close", True)
         partial_pct = config.get("partial_percent", 50)
+
+        # Signal-only mode: no real order, just broadcast + notify
+        if signal_only:
+            from models import Signal
+            signal = Signal(
+                pair=pair,
+                side=sig_data["side"],
+                mode=mode,
+                trading_mode=sig_data["trading_mode"],
+                exchange=exchange_name,
+                entry_price=sig_data["entry_price"],
+                tp1=sig_data["tp1"],
+                tp2=sig_data["tp2"],
+                sl=sig_data["sl"],
+                current_sl=sig_data["sl"],
+                current_tp=sig_data["tp2"],
+                score=sig_data["score"],
+                confidence=sig_data["confidence"],
+                signal_data=sig_data.get("signal_data", {}),
+                rr_ratio=sig_data.get("rr_ratio", "1:2"),
+                est_hold=sig_data.get("est_hold", ""),
+                auto_bep=auto_bep,
+                partial_close=partial_close,
+                partial_percent=partial_pct,
+                order_id="SIGNAL_ONLY",
+                position_size=0,
+                margin=0,
+                leverage=leverage,
+                signal_only=True,
+            )
+            signal_dict = signal.model_dump()
+            sig_data_for_notify = {**signal_dict, **sig_data}
+            await self.db.signals.insert_one(signal_dict)
+            tg_msg_id = await telegram_bot.send_signal_card(sig_data_for_notify)
+            if tg_msg_id:
+                await self.db.signals.update_one({"id": signal.id}, {"$set": {"telegram_message_id": tg_msg_id}})
+            notion_page_id = await notion_sync.create_signal_page(sig_data_for_notify)
+            if notion_page_id:
+                await self.db.signals.update_one({"id": signal.id}, {"$set": {"notion_page_id": notion_page_id}})
+            await self.ws.broadcast({"event": "signal:new", "data": {**signal_dict, "signal_only": True}})
+            logger.info(f"Signal only (no order): {pair} {sig_data['side']} {sig_data['trading_mode']} @ {sig_data['entry_price']:.4f}")
+            return
 
         # Get exchange config
         ex_config = await self.db.exchange_configs.find_one({"name": exchange_name}) or {}

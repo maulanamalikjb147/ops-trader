@@ -59,13 +59,12 @@ class PositionMonitor:
         self._running = False
 
     async def check_all_positions(self):
-        signals = await self.db.signals.find({"status": "open"}).to_list(100)
+        signals = await self.db.signals.find({"status": "open", "signal_only": {"$ne": True}}).to_list(100)
         if not signals:
             return
         tasks = [self._check_signal(s) for s in signals]
         await asyncio.gather(*tasks, return_exceptions=True)
-
-        # Broadcast live PNL update to WebSocket clients
+        # Broadcast live PNL
         await self._broadcast_positions(signals)
 
     async def _broadcast_positions(self, signals):
