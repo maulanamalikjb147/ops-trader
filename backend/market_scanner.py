@@ -7,16 +7,20 @@ from typing import List, Dict
 logger = logging.getLogger(__name__)
 
 
-async def get_top_binance_pairs(quote="USDT", limit=50, min_volume_usd=50_000_000) -> List[Dict]:
-    """Fetch top N USDT perpetual pairs by 24h volume from Binance."""
+async def get_top_binance_pairs(quote="USDT", limit=50, min_volume_usd=10_000_000) -> List[Dict]:
+    """Fetch top N USDT-M perpetual FUTURES pairs by 24h volume from Binance."""
     try:
         async with httpx.AsyncClient(timeout=15) as client:
-            resp = await client.get("https://api.binance.com/api/v3/ticker/24hr")
+            # fapi = USDT-M futures (perpetual). Filter only PERPETUAL contracts.
+            resp = await client.get("https://fapi.binance.com/fapi/v1/ticker/24hr")
             tickers = resp.json()
         pairs = []
         for t in tickers:
             symbol = t.get("symbol", "")
             if not symbol.endswith(quote):
+                continue
+            # Skip dated futures (e.g. BTCUSDT_240927) — keep only PERPETUAL
+            if "_" in symbol:
                 continue
             volume_usdt = float(t.get("quoteVolume", 0))
             if volume_usdt < min_volume_usd:
@@ -30,11 +34,11 @@ async def get_top_binance_pairs(quote="USDT", limit=50, min_volume_usd=50_000_00
                 "last_price": float(t.get("lastPrice", 0)),
                 "exchange": "binance",
             })
-        # Sort by volume descending
+        # Sort by volume descending (highest transaction volume first)
         pairs.sort(key=lambda x: x["volume_24h_usdt"], reverse=True)
         return pairs[:limit]
     except Exception as e:
-        logger.error(f"Binance top pairs fetch failed: {e}")
+        logger.error(f"Binance futures top pairs fetch failed: {e}")
         return []
 
 
@@ -72,7 +76,10 @@ async def get_top_bybit_pairs(quote="USDT", limit=50, min_volume_usd=10_000_000)
 
 
 async def get_top_pairs(exchange: str = "binance", limit: int = 50) -> List[Dict]:
-    """Unified top pairs fetcher."""
-    if exchange in ("bybit", "bybit_testnet"):
+    """Unified top FUTURES pairs fetcher by 24h volume.
+    Demo / unknown exchange falls back to Binance Futures (most liquid reference)."""
+    ex = (exchange or "").lower()
+    if ex in ("bybit", "bybit_testnet"):
         return await get_top_bybit_pairs(limit=limit)
+    # binance / binance live / demo / okx / bitget → use Binance Futures as reference
     return await get_top_binance_pairs(limit=limit)

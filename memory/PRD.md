@@ -3,6 +3,14 @@
 **Last Updated**: 2026-05-30
 **Status**: MVP Complete + All Requested Features Implemented
 
+### Latest Change (2026-05-30)
+- Added "Load Top Futures Pairs" feature in Settings → COINS TO SCAN section.
+  - New backend: `/api/market/top-pairs?exchange=binance|bybit&limit=N` (in `market_scanner.py`).
+  - Uses **Binance Futures** (fapi.binance.com) for binance/demo/okx/bitget active exchanges.
+  - Uses **Bybit Linear (USDT perpetual)** for bybit / bybit_testnet active exchanges.
+  - Sorted by 24h transaction volume (highest first), perpetual contracts only.
+  - UI: 3 buttons (LOAD TOP 20 / LOAD TOP 50 / TOP 100) + CLEAR. Auto-selects exchange source based on `active_exchange`. Confirmed working with 50 pairs loaded from Binance Futures.
+
 ---
 
 ## Problem Statement

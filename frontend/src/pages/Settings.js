@@ -150,7 +150,11 @@ export default function Settings() {
               </Section>
 
               <Section title="COINS TO SCAN">
-                <CoinsList coins={config.coins_to_scan} onChange={(v) => saveConfig({ coins_to_scan: v })} />
+                <CoinsList
+                  coins={config.coins_to_scan}
+                  onChange={(v) => saveConfig({ coins_to_scan: v })}
+                  activeExchange={config.active_exchange}
+                />
               </Section>
 
               <Section title="ACTIVE EXCHANGE">
@@ -429,11 +433,92 @@ function ApiKeyField({ label, value, onChange, placeholder, testId }) {
   );
 }
 
-function CoinsList({ coins, onChange }) {
+function CoinsList({ coins, onChange, activeExchange }) {
   const [newCoin, setNewCoin] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [loadErr, setLoadErr] = useState("");
+  const [topInfo, setTopInfo] = useState(null);
+
+  // Map active_exchange → public exchange source for fetching top pairs.
+  // Demo/binance_testnet/okx/bitget → fall back to Binance Futures reference.
+  const sourceExchange = (() => {
+    const ex = (activeExchange || "").toLowerCase();
+    if (ex.startsWith("bybit")) return "bybit";
+    return "binance";
+  })();
+
+  const loadTop = async (limit) => {
+    setLoading(true);
+    setLoadErr("");
+    try {
+      const res = await axios.get(
+        `${API}/market/top-pairs?exchange=${sourceExchange}&limit=${limit}`,
+        { withCredentials: true }
+      );
+      const pairs = (res.data || []).map((p) => p.pair);
+      if (pairs.length === 0) {
+        setLoadErr("No pairs returned");
+      } else {
+        onChange(pairs);
+        setTopInfo({ count: pairs.length, source: sourceExchange.toUpperCase() });
+        setTimeout(() => setTopInfo(null), 3000);
+      }
+    } catch (e) {
+      setLoadErr(e?.response?.data?.detail || "Failed to load");
+    }
+    setLoading(false);
+  };
+
   return (
     <div>
-      <div className="flex flex-wrap gap-1 mb-2">
+      {/* Auto-load controls */}
+      <div className="flex items-center gap-2 mb-2 flex-wrap">
+        <span className="text-[10px] text-[#8a9bc2] uppercase tracking-widest">
+          Auto-fetch futures top pairs from <span className="text-[#00d4ff]">{sourceExchange.toUpperCase()}</span>
+        </span>
+        <button
+          onClick={() => loadTop(20)}
+          disabled={loading}
+          data-testid="load-top-20-btn"
+          className="btn-primary text-[10px] px-2 py-1 disabled:opacity-50"
+        >
+          {loading ? "..." : "LOAD TOP 20"}
+        </button>
+        <button
+          onClick={() => loadTop(50)}
+          disabled={loading}
+          data-testid="load-top-50-btn"
+          className="btn-primary text-[10px] px-2 py-1 disabled:opacity-50"
+        >
+          {loading ? "..." : "LOAD TOP 50"}
+        </button>
+        <button
+          onClick={() => loadTop(100)}
+          disabled={loading}
+          data-testid="load-top-100-btn"
+          className="text-[10px] px-2 py-1 text-[#8a9bc2]"
+          style={{ border: "1px solid #1a2040" }}
+        >
+          {loading ? "..." : "TOP 100"}
+        </button>
+        {topInfo && (
+          <span className="text-[10px] text-[#00ff88]" data-testid="top-loaded-msg">
+            ✓ Loaded {topInfo.count} pairs from {topInfo.source} (sorted by 24h volume)
+          </span>
+        )}
+        {loadErr && (
+          <span className="text-[10px] text-[#ff3366]" data-testid="top-load-error">
+            ✗ {loadErr}
+          </span>
+        )}
+      </div>
+
+      {coins.length > 0 && (
+        <div className="text-[10px] text-[#8a9bc2] mb-1">
+          {coins.length} pairs configured
+        </div>
+      )}
+      <div className="flex flex-wrap gap-1 mb-2 max-h-48 overflow-y-auto">
         {coins.map((c) => (
           <div key={c} className="flex items-center gap-1 px-2 py-0.5 text-[11px]" style={{ border: "1px solid #1a2040", background: "#0a0e1a" }}>
             <span>{c}</span>
@@ -455,6 +540,13 @@ function CoinsList({ coins, onChange }) {
           className="btn-primary text-[10px] px-3 py-1"
           data-testid="add-coin-btn"
         >ADD</button>
+        {coins.length > 0 && (
+          <button
+            onClick={() => onChange([])}
+            className="btn-danger text-[10px] px-3 py-1"
+            data-testid="clear-coins-btn"
+          >CLEAR</button>
+        )}
       </div>
     </div>
   );
