@@ -5,15 +5,25 @@ import SignalLog from "@/components/SignalLog";
 import useStore from "@/store/useStore";
 import axios from "axios";
 
-const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+const API = `${process.env.REACT_APP_BACKEND_URL || ""}/api`;
 
 const PAIRS = ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT"];
 const TIMEFRAMES = ["1m", "5m", "15m", "1h", "4h", "1d"];
 const MODES = ["ALL", "SWING", "SCALP", "HYBRID"];
 const EXCHANGES = ["ALL", "DEMO", "BINANCE", "BYBIT", "OKX", "BITGET"];
 
-function TradingViewChart({ pair, timeframe }) {
+function TradingViewChart({ pair, timeframe, exchange }) {
   const ref = useRef(null);
+
+  // Map our exchange id → TradingView's symbol prefix
+  const tvPrefix = (() => {
+    const ex = (exchange || "").toLowerCase();
+    if (ex.startsWith("bybit")) return "BYBIT";
+    if (ex === "binance") return "BINANCE";
+    if (ex === "okx") return "OKX";
+    if (ex === "bitget") return "BITGET";
+    return "BINANCE"; // demo / unknown → Binance (most liquid reference)
+  })();
 
   useEffect(() => {
     if (!ref.current) return;
@@ -22,9 +32,20 @@ function TradingViewChart({ pair, timeframe }) {
     script.type = "text/javascript";
     script.async = true;
     script.src = "https://s3.tradingview.com/external-embedding/embed-widget-advanced-chart.js";
+    // For perpetuals on OKX/BYBIT, TradingView uses ".P" suffix (e.g. OKX:BTCUSDT.P)
+    const cleanPair = pair.replace("/", "");
+    const tvSymbol = tvPrefix === "BINANCE"
+      ? `BINANCE:${cleanPair}.P`              // Binance Futures perpetual
+      : tvPrefix === "BYBIT"
+      ? `BYBIT:${cleanPair}.P`
+      : tvPrefix === "OKX"
+      ? `OKX:${cleanPair}.P`
+      : tvPrefix === "BITGET"
+      ? `BITGET:${cleanPair}.P`
+      : `BINANCE:${cleanPair}`;
     script.innerHTML = JSON.stringify({
       autosize: true,
-      symbol: `BINANCE:${pair.replace("/", "")}`,
+      symbol: tvSymbol,
       interval: timeframe.toUpperCase(),
       timezone: "UTC",
       theme: "dark",
@@ -46,9 +67,16 @@ function TradingViewChart({ pair, timeframe }) {
     wrapper.appendChild(inner);
     wrapper.appendChild(script);
     ref.current.appendChild(wrapper);
-  }, [pair, timeframe]);
+  }, [pair, timeframe, tvPrefix]);
 
-  return <div ref={ref} style={{ height: "100%", width: "100%" }} />;
+  return (
+    <div className="relative h-full w-full">
+      <div className="absolute top-1 left-2 z-10 text-[9px] uppercase tracking-widest text-[#00d4ff] pointer-events-none" data-testid="chart-exchange-tag">
+        {tvPrefix}
+      </div>
+      <div ref={ref} style={{ height: "100%", width: "100%" }} />
+    </div>
+  );
 }
 
 export default function Dashboard() {
@@ -58,6 +86,7 @@ export default function Dashboard() {
   const [modeFilter, setModeFilter] = useState("ALL");
   const [exchFilter, setExchFilter] = useState("ALL");
   const [openSignals, setOpenSignals] = useState([]);
+  const [activeExchange, setActiveExchange] = useState("okx");
 
   const fetchOpen = async () => {
     try {
@@ -66,11 +95,20 @@ export default function Dashboard() {
     } catch (_) {}
   };
 
+  const fetchActiveExchange = async () => {
+    try {
+      const { data } = await axios.get(`${API}/config`, { withCredentials: true });
+      if (data?.active_exchange) setActiveExchange(data.active_exchange);
+    } catch (_) {}
+  };
+
   useEffect(() => {
     fetchOpen();
     fetchStats();
+    fetchActiveExchange();
     const t = setInterval(fetchOpen, 15000);
-    return () => clearInterval(t);
+    const tc = setInterval(fetchActiveExchange, 30000);
+    return () => { clearInterval(t); clearInterval(tc); };
   }, []);
 
   // Merge live PNL from WebSocket into signal data
@@ -147,7 +185,7 @@ export default function Dashboard() {
         <div className="flex-1 min-h-0 flex">
           {/* Chart */}
           <div className="flex-1 min-w-0" style={{ borderRight: "1px solid #1a2040" }}>
-            <TradingViewChart pair={pair} timeframe={timeframe} />
+            <TradingViewChart pair={pair} timeframe={timeframe} exchange={activeExchange} />
           </div>
 
           {/* Positions Panel */}

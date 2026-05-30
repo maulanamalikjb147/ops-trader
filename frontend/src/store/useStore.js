@@ -1,7 +1,13 @@
 import { create } from "zustand";
 
-const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
-const WS_URL = `${process.env.REACT_APP_BACKEND_URL.replace("https://", "wss://").replace("http://", "ws://")}/ws`;
+// Backend URL resolution:
+// - If REACT_APP_BACKEND_URL is set (preview env / explicit override) → use it (absolute)
+// - Else → use empty string (relative) so requests go to same-origin (Nginx proxies /api → backend)
+const RAW = process.env.REACT_APP_BACKEND_URL || "";
+const API = `${RAW}/api`;
+const WS_URL = RAW
+  ? `${RAW.replace("https://", "wss://").replace("http://", "ws://")}/ws`
+  : `${typeof window !== "undefined" && window.location.protocol === "https:" ? "wss:" : "ws:"}//${typeof window !== "undefined" ? window.location.host : ""}/ws`;
 
 const useStore = create((set, get) => ({
   user: undefined,

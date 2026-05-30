@@ -3,7 +3,7 @@ import Layout from "@/components/Layout";
 import SignalCard from "@/components/SignalCard";
 import axios from "axios";
 
-const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+const API = `${process.env.REACT_APP_BACKEND_URL || ""}/api`;
 
 const STATUS_OPTIONS = ["ALL", "open", "closed", "cancelled"];
 const MODE_OPTIONS = ["ALL", "swing", "scalp", "hybrid"];

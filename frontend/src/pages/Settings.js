@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 import Layout from "@/components/Layout";
 import axios from "axios";
 
-const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+const API = `${process.env.REACT_APP_BACKEND_URL || ""}/api`;
 
 const EXCHANGE_OPTIONS = [
   { name: "demo", tag: "DEMO", mode: "demo", description: "Paper trading (no real API)" },
@@ -440,11 +440,13 @@ function CoinsList({ coins, onChange, activeExchange }) {
   const [topInfo, setTopInfo] = useState(null);
 
   // Map active_exchange → public exchange source for fetching top pairs.
-  // Demo/binance_testnet/okx/bitget → fall back to Binance Futures reference.
+  // OKX is the primary source (works without API key, true SWAP futures).
+  // Binance/Bybit available for users on those exchanges.
   const sourceExchange = (() => {
     const ex = (activeExchange || "").toLowerCase();
     if (ex.startsWith("bybit")) return "bybit";
-    return "binance";
+    if (ex === "binance") return "binance";
+    return "okx"; // okx / demo / bitget / unknown → OKX (default, public, futures-native)
   })();
 
   const loadTop = async (limit) => {

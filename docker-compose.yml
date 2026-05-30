@@ -96,8 +96,9 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-      args:
-        REACT_APP_BACKEND_URL: ${REACT_APP_BACKEND_URL:-http://localhost:8001}
+      # No build args needed — frontend uses RELATIVE URLs (/api).
+      # Nginx inside this container proxies /api → backend:8001.
+      # This image is domain-agnostic — same image deploys anywhere.
     container_name: signal-bot-frontend
     restart: unless-stopped
     ports:

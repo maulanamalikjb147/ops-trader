@@ -1,15 +1,13 @@
 # Signal Bot - PRD (Product Requirements Document)
 
-**Last Updated**: 2026-05-30
+**Last Updated**: 2026-05-30 (Production-ready: relative URLs + OKX primary)
 **Status**: MVP Complete + All Requested Features Implemented
 
-### Latest Change (2026-05-30)
-- Added "Load Top Futures Pairs" feature in Settings → COINS TO SCAN section.
-  - New backend: `/api/market/top-pairs?exchange=binance|bybit&limit=N` (in `market_scanner.py`).
-  - Uses **Binance Futures** (fapi.binance.com) for binance/demo/okx/bitget active exchanges.
-  - Uses **Bybit Linear (USDT perpetual)** for bybit / bybit_testnet active exchanges.
-  - Sorted by 24h transaction volume (highest first), perpetual contracts only.
-  - UI: 3 buttons (LOAD TOP 20 / LOAD TOP 50 / TOP 100) + CLEAR. Auto-selects exchange source based on `active_exchange`. Confirmed working with 50 pairs loaded from Binance Futures.
+### Latest Changes (2026-05-30)
+1. **Domain-agnostic frontend image**: Frontend now uses RELATIVE URLs (`/api`). Nginx in frontend container proxies `/api` → `backend:8001`. Result: same image deploys to any domain, no CORS issues, no rebuild needed.
+2. **OKX futures support**: Added `get_top_okx_pairs()` using `/api/v5/public/instruments?instType=SWAP` + `volUsd24h` for proper USDT volume sorting. OKX is now the **default** when active_exchange is demo/okx/bitget.
+3. **TradingView chart follows active exchange**: Chart symbol prefix dynamically set (BINANCE/BYBIT/OKX/BITGET) with `.P` suffix for perpetual futures contracts.
+4. **docker-compose simplified**: Removed `REACT_APP_BACKEND_URL` build arg dependency.
 
 ---
 

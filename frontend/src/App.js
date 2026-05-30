@@ -10,7 +10,7 @@ import Settings from "@/pages/Settings";
 import "@/App.css";
 import "@/index.css";
 
-const API = `${process.env.REACT_APP_BACKEND_URL}/api`;
+const API = `${process.env.REACT_APP_BACKEND_URL || ""}/api`;
 
 function ProtectedRoute({ children }) {
   const { user } = useStore();

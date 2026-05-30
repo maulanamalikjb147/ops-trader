@@ -11,7 +11,9 @@ RUN yarn install --frozen-lockfile --silent --ignore-engines
 COPY . .
 
 # Build args (set at build time via docker-compose or kubectl)
-ARG REACT_APP_BACKEND_URL=http://localhost:8001
+# Default empty → frontend will use RELATIVE URLs (/api) so Nginx in this container
+# proxies to backend. Image becomes domain-agnostic — deploy anywhere, no CORS issues.
+ARG REACT_APP_BACKEND_URL=
 ENV REACT_APP_BACKEND_URL=$REACT_APP_BACKEND_URL
 
 RUN yarn build
