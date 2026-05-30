@@ -502,6 +502,15 @@ async def scan_now(request: Request, mode: Optional[str] = None):
     return result
 
 
+@api.get("/market/top-pairs")
+async def get_top_pairs(request: Request, exchange: str = "binance", limit: int = 50):
+    """Fetch top trading pairs by 24h volume from exchange."""
+    await get_current_user(request, db)
+    from market_scanner import get_top_pairs
+    pairs = await get_top_pairs(exchange, limit)
+    return pairs
+
+
 # ═══════════════════════════════════════════════════════════════════════════════
 #  DASHBOARD STATS
 # ═══════════════════════════════════════════════════════════════════════════════
