@@ -234,8 +234,9 @@ export default function Settings() {
               </Section>
               <Section title="NOTION DATABASE">
                 <ApiKeyField label="API Key" value={config.notion_api_key || ""} onChange={(v) => setConfig({ ...config, notion_api_key: v })} placeholder="secret_xxx..." testId="notion-api-key" />
-                <ApiKeyField label="Database ID" value={config.notion_database_id || ""} onChange={(v) => setConfig({ ...config, notion_database_id: v })} placeholder="notion page id" testId="notion-db-id" />
-                <a href="https://notion.so/my-integrations" target="_blank" rel="noreferrer" className="text-[10px] text-[#00d4ff]">Get key from notion.so/my-integrations</a>
+                <ApiKeyField label="Database ID (auto-filled after setup)" value={config.notion_database_id || ""} onChange={(v) => setConfig({ ...config, notion_database_id: v })} placeholder="leave empty & use AUTO-SETUP below" testId="notion-db-id" />
+                <NotionAutoSetup config={config} onUpdate={(updates) => setConfig({ ...config, ...updates })} />
+                <a href="https://notion.so/my-integrations" target="_blank" rel="noreferrer" className="text-[10px] text-[#00d4ff] block">Get API key from notion.so/my-integrations</a>
               </Section>
               <Section title="COINGECKO API">
                 <ApiKeyField label="API Key (optional)" value={config.coingecko_api_key || ""} onChange={(v) => setConfig({ ...config, coingecko_api_key: v })} placeholder="CG-xxx... (optional)" testId="coingecko-key" />
@@ -684,6 +685,144 @@ function StatusRow({ label, active, extra }) {
       <div className="flex items-center gap-2">
         {extra && <span className="text-[10px] text-[#8a9bc2]">{extra}</span>}
         <span className={`text-[10px] font-bold ${active ? "text-[#00ff88]" : "text-[#ff3366]"}`}>{active ? "CONNECTED" : "DISCONNECTED"}</span>
+      </div>
+    </div>
+  );
+}
+
+
+function NotionAutoSetup({ config, onUpdate }) {
+  const [parentPage, setParentPage] = useState("");
+  const [creating, setCreating] = useState(false);
+  const [testing, setTesting] = useState(false);
+  const [summarizing, setSummarizing] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const keyConfigured = !!config.notion_api_key;
+  const dbConfigured = !!config.notion_database_id;
+
+  const test = async () => {
+    setTesting(true);
+    setResult(null);
+    try {
+      const { data } = await axios.post(`${API}/notion/test`, {}, { withCredentials: true });
+      setResult({ type: data.ok ? "ok" : "err", msg: data.ok
+        ? `Connected as "${data.bot_name}"${data.database_accessible ? ` — DB "${data.database_title}" accessible ✓` : (data.database_error ? ` — DB error: ${data.database_error}` : " — no DB set yet")}`
+        : data.error
+      });
+    } catch (e) {
+      setResult({ type: "err", msg: e?.response?.data?.detail || e.message });
+    }
+    setTesting(false);
+  };
+
+  const autoSetup = async () => {
+    if (!parentPage.trim()) {
+      setResult({ type: "err", msg: "Paste the parent page URL or ID first" });
+      return;
+    }
+    setCreating(true);
+    setResult(null);
+    try {
+      const { data } = await axios.post(
+        `${API}/notion/auto-setup`,
+        { parent_page: parentPage.trim(), title: "Trading Journal" },
+        { withCredentials: true }
+      );
+      onUpdate({ notion_database_id: data.database_id });
+      setResult({ type: "ok", msg: `Database created! ID: ${data.database_id.slice(0, 8)}…` + (data.url ? ` — Open: ${data.url}` : "") });
+      setParentPage("");
+    } catch (e) {
+      setResult({ type: "err", msg: e?.response?.data?.detail || e.message });
+    }
+    setCreating(false);
+  };
+
+  const triggerDailySummary = async () => {
+    setSummarizing(true);
+    setResult(null);
+    try {
+      const { data } = await axios.post(`${API}/notion/daily-summary`, {}, { withCredentials: true });
+      setResult({ type: "ok", msg: `Daily summary sent: ${data.total_signals} trades, ${data.wins}W/${data.losses}L, Win Rate ${data.win_rate}%, PNL $${data.net_pnl}` });
+    } catch (e) {
+      setResult({ type: "err", msg: e?.response?.data?.detail || e.message });
+    }
+    setSummarizing(false);
+  };
+
+  if (!keyConfigured) {
+    return (
+      <div className="text-[10px] text-[#8a9bc2] p-2" style={{ border: "1px dashed #1a2040", background: "#0a0e1a" }} data-testid="notion-setup-hint">
+        ↑ Paste & save your Notion API key first to enable auto-setup
+      </div>
+    );
+  }
+
+  return (
+    <div className="p-2 space-y-2" style={{ border: "1px solid #1a2040", background: "#0a0e1a" }}>
+      <div className="text-[9px] uppercase tracking-widest text-[#00d4ff]">⚡ AUTO-SETUP DATABASE</div>
+      {!dbConfigured ? (
+        <>
+          <div className="text-[10px] text-[#8a9bc2] leading-relaxed">
+            Paste the URL or ID of a Notion <span className="text-[#00d4ff]">parent page</span> (page you've shared with your integration). Bot will create a "Trading Journal" database inside it with all 20 columns automatically.
+          </div>
+          <input
+            value={parentPage}
+            onChange={(e) => setParentPage(e.target.value)}
+            placeholder="https://notion.so/Trading-journal-37056703... or just the 32-char ID"
+            autoComplete="off"
+            spellCheck={false}
+            data-testid="notion-parent-input"
+            className="w-full px-2 py-1.5 text-xs text-[#e0e8ff] outline-none"
+            style={{ background: "#0f1423", border: "1px solid #1a2040" }}
+          />
+          <button
+            onClick={autoSetup}
+            disabled={creating}
+            data-testid="notion-auto-setup-btn"
+            className="btn-primary text-[11px] px-3 py-1.5 w-full font-bold disabled:opacity-50"
+          >
+            {creating ? "CREATING DATABASE..." : "⚡ AUTO-CREATE DATABASE"}
+          </button>
+        </>
+      ) : (
+        <div className="text-[10px] text-[#00ff88]" data-testid="notion-db-ready">
+          ✓ Database is configured. Bot will log every signal as a new row.
+        </div>
+      )}
+      <div className="flex gap-2 pt-1">
+        <button
+          onClick={test}
+          disabled={testing}
+          data-testid="notion-test-btn"
+          className="text-[10px] px-2 py-1 flex-1 disabled:opacity-50"
+          style={{ border: "1px solid #00d4ff", color: "#00d4ff" }}
+        >
+          {testing ? "TESTING..." : "TEST CONNECTION"}
+        </button>
+        {dbConfigured && (
+          <button
+            onClick={triggerDailySummary}
+            disabled={summarizing}
+            data-testid="notion-daily-summary-btn"
+            className="text-[10px] px-2 py-1 flex-1 disabled:opacity-50"
+            style={{ border: "1px solid #00ff88", color: "#00ff88" }}
+          >
+            {summarizing ? "SENDING..." : "📊 SEND DAILY SUMMARY NOW"}
+          </button>
+        )}
+      </div>
+      {result && (
+        <div
+          className={`text-[10px] leading-relaxed p-2 ${result.type === "ok" ? "text-[#00ff88]" : "text-[#ff3366]"}`}
+          style={{ background: "#0f1423", border: `1px solid ${result.type === "ok" ? "#00ff8855" : "#ff336655"}` }}
+          data-testid="notion-result"
+        >
+          {result.type === "ok" ? "✓ " : "✗ "}{result.msg}
+        </div>
+      )}
+      <div className="text-[9px] text-[#8a9bc2] mt-1 leading-relaxed">
+        ℹ Daily summary will be auto-sent to Notion + Telegram at <span className="text-[#00d4ff]">23:59 UTC</span> every day.
       </div>
     </div>
   );

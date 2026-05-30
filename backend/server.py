@@ -512,6 +512,55 @@ async def get_top_pairs(request: Request, exchange: str = "binance", limit: int 
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
+#  NOTION SETUP HELPERS
+# ═══════════════════════════════════════════════════════════════════════════════
+@api.post("/notion/test")
+async def notion_test(request: Request):
+    """Test Notion API key + database accessibility."""
+    await get_current_user(request, db)
+    cfg = await db.bot_config.find_one({}) or {}
+    api_key = cfg.get("notion_api_key", "")
+    database_id = cfg.get("notion_database_id", "")
+    from notion_sync import NotionSync
+    tester = NotionSync(api_key, database_id)
+    return await tester.test_connection()
+
+
+@api.post("/notion/auto-setup")
+async def notion_auto_setup(body: dict, request: Request):
+    """Auto-create a 'Trading Journal' database with the full bot schema inside a parent page.
+    Body: {"parent_page": "URL or 32-char ID", "title": "optional name"}
+    Returns the new database_id (also saved to config)."""
+    await get_current_user(request, db)
+    cfg = await db.bot_config.find_one({}) or {}
+    api_key = cfg.get("notion_api_key", "")
+    if not api_key:
+        raise HTTPException(status_code=400, detail="Save your Notion API key first")
+    parent = body.get("parent_page", "").strip()
+    title = body.get("title", "Trading Journal")
+    if not parent:
+        raise HTTPException(status_code=400, detail="parent_page is required (URL or 32-char ID)")
+    from notion_sync import NotionSync
+    creator = NotionSync(api_key, "")
+    result = await creator.auto_create_database(parent, title)
+    if "error" in result:
+        raise HTTPException(status_code=400, detail=result["error"])
+    # Persist new database_id to config
+    new_db_id = result["database_id"]
+    await db.bot_config.update_one({}, {"$set": {"notion_database_id": new_db_id}}, upsert=True)
+    notion_sync.reconfigure(api_key, new_db_id)
+    return {"ok": True, "database_id": new_db_id, "url": result.get("url", "")}
+
+
+@api.post("/notion/daily-summary")
+async def notion_daily_summary_now(request: Request):
+    """Manually trigger today's daily summary (also runs automatically at 23:59 UTC daily)."""
+    await get_current_user(request, db)
+    from scheduler import compute_and_send_daily_summary
+    return await compute_and_send_daily_summary(db)
+
+
+# ═══════════════════════════════════════════════════════════════════════════════
 #  DASHBOARD STATS
 # ═══════════════════════════════════════════════════════════════════════════════
 @api.get("/dashboard")

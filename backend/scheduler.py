@@ -33,6 +33,7 @@ class SignalBotScheduler:
             asyncio.create_task(self._swing_loop()),
             asyncio.create_task(self._scalp_loop()),
             asyncio.create_task(self._hybrid_loop()),
+            asyncio.create_task(self._daily_summary_loop()),
             asyncio.create_task(self.position_monitor.start()),
         ]
         logger.info("Scheduler started")
@@ -259,6 +260,75 @@ class SignalBotScheduler:
             for sig in signals:
                 await self._process_signal(sig, config)
         return {"scanned": len(coins), "modes": modes}
+
+    async def _daily_summary_loop(self):
+        """Background task: emit a daily summary at 23:59 UTC every day.
+        Sends row to Notion (if configured) and message to Telegram."""
+        while self._running:
+            try:
+                now = datetime.now(timezone.utc)
+                # Compute seconds until next 23:59:00 UTC
+                target = now.replace(hour=23, minute=59, second=0, microsecond=0)
+                if target <= now:
+                    # Already past today's 23:59 → schedule for tomorrow
+                    from datetime import timedelta
+                    target = target + timedelta(days=1)
+                wait_s = max(60, (target - now).total_seconds())
+                logger.info(f"Daily summary will run in {wait_s/3600:.2f}h")
+                await asyncio.sleep(wait_s)
+                if not self._running:
+                    break
+                await compute_and_send_daily_summary(self.db)
+            except Exception as e:
+                logger.error(f"Daily summary loop error: {e}")
+                await asyncio.sleep(3600)  # Retry in 1h on error
+
+
+async def compute_and_send_daily_summary(db) -> dict:
+    """Compute today's trading stats and push them to Notion + Telegram."""
+    today = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    # Pull closed signals from today
+    start = f"{today}T00:00:00+00:00"
+    end = f"{today}T23:59:59+00:00"
+    closed = await db.signals.find({
+        "status": "closed",
+        "closed_at": {"$gte": start, "$lte": end},
+    }).to_list(1000)
+    total = len(closed)
+    wins = sum(1 for s in closed if (s.get("pnl") or 0) >= 0)
+    losses = total - wins
+    net_pnl = sum((s.get("pnl") or 0) for s in closed)
+    win_rate = round(wins / total * 100, 1) if total > 0 else 0
+    summary = {
+        "date": today,
+        "total_signals": total,
+        "wins": wins,
+        "losses": losses,
+        "net_pnl": round(net_pnl, 2),
+        "win_rate": win_rate,
+    }
+    # Save to DB
+    await db.daily_summaries.update_one({"date": today}, {"$set": summary}, upsert=True)
+    # Push to Notion
+    notion_page_id = ""
+    if notion_sync.enabled:
+        notion_page_id = await notion_sync.create_daily_summary(summary)
+    # Push to Telegram
+    if telegram_bot.enabled:
+        emoji = "🟢" if net_pnl >= 0 else "🔴"
+        msg = (
+            f"📊 *DAILY SUMMARY — {today}*\n\n"
+            f"Total trades: *{total}*\n"
+            f"Wins: *{wins}* | Losses: *{losses}*\n"
+            f"Win Rate: *{win_rate}%*\n"
+            f"Net PNL: {emoji} *${round(net_pnl, 2)}*"
+        )
+        try:
+            await telegram_bot.send_system_alert(msg)
+        except Exception as e:
+            logger.error(f"Telegram daily summary send failed: {e}")
+    logger.info(f"Daily summary: {summary}")
+    return {**summary, "notion_page_id": notion_page_id}
 
 
 # Global scheduler instance
