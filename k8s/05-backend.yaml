@@ -1,0 +1,92 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: backend
+  namespace: signal-bot
+  labels:
+    app: backend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: backend
+  template:
+    metadata:
+      labels:
+        app: backend
+    spec:
+      containers:
+        - name: backend
+          image: YOUR_REGISTRY/signal-bot-backend:latest
+          # ↑ Replace with your Docker registry image
+          # Example: ghcr.io/youruser/signal-bot-backend:latest
+          imagePullPolicy: Always
+          ports:
+            - containerPort: 8001
+          env:
+            # Load from secrets
+            - name: MONGO_URL
+              valueFrom:
+                secretKeyRef:
+                  name: signal-bot-secrets
+                  key: MONGO_URL
+            - name: DB_NAME
+              valueFrom:
+                secretKeyRef:
+                  name: signal-bot-secrets
+                  key: DB_NAME
+            - name: REDIS_URL
+              valueFrom:
+                secretKeyRef:
+                  name: signal-bot-secrets
+                  key: REDIS_URL
+            - name: JWT_SECRET
+              valueFrom:
+                secretKeyRef:
+                  name: signal-bot-secrets
+                  key: JWT_SECRET
+            - name: ADMIN_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: signal-bot-secrets
+                  key: ADMIN_USERNAME
+            - name: ADMIN_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: signal-bot-secrets
+                  key: ADMIN_PASSWORD
+            - name: ENCRYPTION_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: signal-bot-secrets
+                  key: ENCRYPTION_KEY
+            - name: CORS_ORIGINS
+              valueFrom:
+                secretKeyRef:
+                  name: signal-bot-secrets
+                  key: CORS_ORIGINS
+            - name: FRONTEND_URL
+              valueFrom:
+                secretKeyRef:
+                  name: signal-bot-secrets
+                  key: FRONTEND_URL
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "1Gi"
+              cpu: "1000m"
+          livenessProbe:
+            httpGet:
+              path: /api/bot/status
+              port: 8001
+            initialDelaySeconds: 30
+            periodSeconds: 30
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /api/bot/status
+              port: 8001
+            initialDelaySeconds: 15
+            periodSeconds: 10

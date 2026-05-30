@@ -1,0 +1,53 @@
+version: '3.9'
+
+# ══════════════════════════════════════════════════════════════════════════════
+#  SIGNAL BOT — Docker Compose PRODUCTION
+#  Use when MongoDB/Redis are EXTERNAL (MongoDB Atlas, Redis Cloud, etc.)
+#  Usage: docker-compose -f docker-compose.prod.yml up -d
+# ══════════════════════════════════════════════════════════════════════════════
+
+services:
+
+  backend:
+    image: ${DOCKER_REGISTRY:-your-registry}/signal-bot-backend:${IMAGE_TAG:-latest}
+    # Or build from source:
+    # build:
+    #   context: ./backend
+    #   dockerfile: Dockerfile
+    container_name: signal-bot-backend
+    restart: always
+    environment:
+      MONGO_URL: ${MONGO_URL}
+      DB_NAME: ${DB_NAME:-signal_bot}
+      REDIS_URL: ${REDIS_URL}
+      JWT_SECRET: ${JWT_SECRET}
+      ADMIN_USERNAME: ${ADMIN_USERNAME:-opsculun}
+      ADMIN_PASSWORD: ${ADMIN_PASSWORD}
+      CORS_ORIGINS: ${CORS_ORIGINS}
+      FRONTEND_URL: ${FRONTEND_URL}
+      ENCRYPTION_KEY: ${ENCRYPTION_KEY}
+    ports:
+      - "8001:8001"
+    networks:
+      - signal-net
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: '0.5'
+
+  frontend:
+    image: ${DOCKER_REGISTRY:-your-registry}/signal-bot-frontend:${IMAGE_TAG:-latest}
+    container_name: signal-bot-frontend
+    restart: always
+    ports:
+      - "80:80"
+      - "443:443"
+    depends_on:
+      - backend
+    networks:
+      - signal-net
+
+networks:
+  signal-net:
+    driver: bridge

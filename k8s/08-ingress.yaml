@@ -1,0 +1,55 @@
+# ══════════════════════════════════════════════════════════════════════════════
+#  Ingress — nginx-ingress required in your cluster
+#  Install: kubectl apply -f https://raw.githubusercontent.com/kubernetes/ingress-nginx/main/deploy/static/provider/cloud/deploy.yaml
+#  Replace yourdomain.com with your actual domain
+# ══════════════════════════════════════════════════════════════════════════════
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: signal-bot-ingress
+  namespace: signal-bot
+  annotations:
+    kubernetes.io/ingress.class: "nginx"
+    nginx.ingress.kubernetes.io/proxy-read-timeout: "86400"
+    nginx.ingress.kubernetes.io/proxy-send-timeout: "86400"
+    # WebSocket support
+    nginx.ingress.kubernetes.io/proxy-http-version: "1.1"
+    nginx.ingress.kubernetes.io/configuration-snippet: |
+      proxy_set_header Upgrade $http_upgrade;
+      proxy_set_header Connection "upgrade";
+    # TLS via cert-manager (uncomment if using cert-manager)
+    # cert-manager.io/cluster-issuer: "letsencrypt-prod"
+spec:
+  # TLS (uncomment and configure for HTTPS)
+  # tls:
+  #   - hosts:
+  #       - yourdomain.com
+  #     secretName: signal-bot-tls
+  rules:
+    - host: yourdomain.com   # ← CHANGE THIS to your domain
+      http:
+        paths:
+          # API routes → backend
+          - path: /api
+            pathType: Prefix
+            backend:
+              service:
+                name: backend-service
+                port:
+                  number: 8001
+          # WebSocket → backend
+          - path: /ws
+            pathType: Exact
+            backend:
+              service:
+                name: backend-service
+                port:
+                  number: 8001
+          # Everything else → frontend
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: frontend-service
+                port:
+                  number: 80

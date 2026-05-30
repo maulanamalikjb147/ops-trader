@@ -128,6 +128,14 @@ Build a personal-use crypto trading signal system similar to the MASTER_PROMPT_S
 11. Settings page (4 tabs: Bot Config, Exchanges, Integrations, Controls)
 12. WebSocket real-time updates
 13. Documentation (README.md)
+14. **Dockerfile** for backend (Python 3.11-slim)
+15. **Dockerfile** for frontend (multi-stage: Node18 builder + nginx)
+16. **docker-compose.yml** (all-in-one: MongoDB + Redis + Backend + Frontend)
+17. **docker-compose.prod.yml** (external DB version)
+18. **Kubernetes manifests** (/app/k8s/ - 9 files)
+19. **.env.example** with full credential config guide
+20. **deploy.sh** automated K8s deploy script
+21. **k8s/README.md** deployment documentation
 
 ---
 
