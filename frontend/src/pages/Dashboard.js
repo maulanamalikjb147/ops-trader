@@ -7,10 +7,10 @@ import axios from "axios";
 
 const API = `${process.env.REACT_APP_BACKEND_URL || ""}/api`;
 
-const PAIRS = ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT"];
 const TIMEFRAMES = ["1m", "5m", "15m", "1h", "4h", "1d"];
 const MODES = ["ALL", "SWING", "SCALP", "HYBRID"];
 const EXCHANGES = ["ALL", "DEMO", "OKX"];
+const DEFAULT_PAIRS = ["BTC/USDT", "ETH/USDT", "SOL/USDT"];
 
 function TradingViewChart({ pair, timeframe, exchange }) {
   const ref = useRef(null);
@@ -22,7 +22,7 @@ function TradingViewChart({ pair, timeframe, exchange }) {
     if (ex === "binance") return "BINANCE";
     if (ex === "okx") return "OKX";
     if (ex === "bitget") return "BITGET";
-    return "BINANCE"; // demo / unknown → Binance (most liquid reference)
+    return "OKX"; // demo / unknown → OKX (primary exchange)
   })();
 
   useEffect(() => {
@@ -87,6 +87,7 @@ export default function Dashboard() {
   const [exchFilter, setExchFilter] = useState("ALL");
   const [openSignals, setOpenSignals] = useState([]);
   const [activeExchange, setActiveExchange] = useState("okx");
+  const [configuredPairs, setConfiguredPairs] = useState(DEFAULT_PAIRS);
 
   const fetchOpen = async () => {
     try {
@@ -99,6 +100,12 @@ export default function Dashboard() {
     try {
       const { data } = await axios.get(`${API}/config`, { withCredentials: true });
       if (data?.active_exchange) setActiveExchange(data.active_exchange);
+      // Sync pair selector with coins_to_scan from settings
+      if (data?.coins_to_scan && data.coins_to_scan.length > 0) {
+        setConfiguredPairs(data.coins_to_scan);
+        // If current pair is not in new list, switch to first
+        setPair((prev) => data.coins_to_scan.includes(prev) ? prev : data.coins_to_scan[0]);
+      }
     } catch (_) {}
   };
 
@@ -164,7 +171,7 @@ export default function Dashboard() {
             className="text-[11px] px-2 py-1 outline-none cursor-pointer"
             style={{ background: "#0f1423", border: "1px solid #1a2040", color: "#e0e8ff" }}
           >
-            {PAIRS.map((p) => <option key={p} value={p}>{p}</option>)}
+            {configuredPairs.map((p) => <option key={p} value={p}>{p}</option>)}
           </select>
           {/* Timeframe */}
           <div className="flex items-center ml-1">

@@ -112,6 +112,21 @@ async def startup():
     if cfg:
         telegram_bot.reconfigure(cfg.get("telegram_token", ""), cfg.get("telegram_chat_id", ""))
         notion_sync.reconfigure(cfg.get("notion_api_key", ""), cfg.get("notion_database_id", ""))
+    # Start OKX WebSocket price stream
+    from data_fetcher import okx_ws
+    await okx_ws.start()
+    # Subscribe to configured coins
+    if cfg:
+        coins = cfg.get("coins_to_scan", [])
+        if coins:
+            inst_ids = []
+            for c in coins:
+                base_quote = c.replace("/", "-")
+                if not base_quote.endswith("-SWAP"):
+                    base_quote = f"{base_quote}-SWAP"
+                inst_ids.append(base_quote)
+            await okx_ws.ensure_subscribed(inst_ids)
+            logger.info(f"OKX WS subscribed to {len(inst_ids)} instruments")
     logger.info("Startup complete")
 
 
@@ -441,6 +456,16 @@ async def update_config(body: dict, request: Request):
     if cfg:
         telegram_bot.reconfigure(cfg.get("telegram_token", ""), cfg.get("telegram_chat_id", ""))
         notion_sync.reconfigure(cfg.get("notion_api_key", ""), cfg.get("notion_database_id", ""))
+        # Re-subscribe WS to updated coin list
+        if "coins_to_scan" in update:
+            from data_fetcher import okx_ws
+            inst_ids = []
+            for c in update["coins_to_scan"]:
+                base_quote = c.replace("/", "-")
+                if not base_quote.endswith("-SWAP"):
+                    base_quote = f"{base_quote}-SWAP"
+                inst_ids.append(base_quote)
+            await okx_ws.ensure_subscribed(inst_ids)
     return {"ok": True}
 
 

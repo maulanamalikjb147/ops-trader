@@ -1,4 +1,6 @@
-"""Exchange handler: supports ccxt (live) and DemoExchange (paper trading simulation)."""
+"""Exchange handler: supports ccxt (live) and DemoExchange (paper trading simulation).
+DemoExchange uses OKX public API (no API key required) for price data.
+"""
 import uuid
 import asyncio
 import logging
@@ -10,21 +12,22 @@ import httpx
 logger = logging.getLogger(__name__)
 
 
-# ── Demo Exchange (in-code simulation, no real API) ────────────────────────────
+def _to_okx_inst(symbol: str) -> str:
+    """Convert 'BTC/USDT' → 'BTC-USDT-SWAP'."""
+    base_quote = symbol.replace("/", "-")
+    if base_quote.endswith("-SWAP"):
+        return base_quote
+    return f"{base_quote}-SWAP"
+
+
+# ── Demo Exchange (paper trading, OKX data) ────────────────────────────────────
 class DemoExchange:
-    """Simulates exchange behavior using real market prices from Binance."""
+    """Simulates exchange behavior using real market prices from OKX."""
 
     async def get_current_price(self, symbol: str) -> float:
-        clean = symbol.replace("/", "")
-        try:
-            async with httpx.AsyncClient(timeout=5) as client:
-                resp = await client.get(
-                    f"https://api.binance.com/api/v3/ticker/price?symbol={clean}"
-                )
-                return float(resp.json().get("price", 0))
-        except Exception as e:
-            logger.warning(f"Demo price fetch failed: {e}")
-            return 0.0
+        """Fetch price from OKX WS cache first, then REST."""
+        from data_fetcher import get_current_price as okx_price
+        return await okx_price(symbol)
 
     async def get_balance(self, db, exchange_name: str = "demo") -> float:
         config = await db.exchange_configs.find_one({"name": exchange_name})

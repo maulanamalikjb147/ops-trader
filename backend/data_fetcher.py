@@ -1,10 +1,15 @@
-"""Data fetcher for all external APIs with in-memory caching."""
+"""Data fetcher for all external APIs with in-memory caching.
+Prices are streamed via OKX WebSocket to avoid REST rate limits.
+"""
 import httpx
 import asyncio
+import json
 import logging
 import time
 import statistics
 from typing import Optional, List, Dict, Any
+
+import websockets
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +28,85 @@ def _cache_get(key: str):
 
 def _cache_set(key: str, value, ttl: int = 60):
     _cache[key] = (value, time.time() + ttl)
+
+
+# ── OKX WebSocket Price Stream ─────────────────────────────────────────────
+class OKXWebSocketClient:
+    """Persistent WebSocket connection to OKX public tickers channel.
+    Subscribes to SWAP tickers and maintains an in-memory price cache.
+    Falls back to REST API if WS is not yet connected.
+    """
+    WS_URL = "wss://ws.okx.com:8443/ws/v5/public"
+
+    def __init__(self):
+        self._prices: Dict[str, float] = {}   # instId -> last price
+        self._subscribed: set = set()
+        self._ws = None
+        self._running = False
+
+    def get_price(self, inst_id: str) -> float:
+        return self._prices.get(inst_id, 0.0)
+
+    async def ensure_subscribed(self, inst_ids: List[str]):
+        """Subscribe to inst_ids that are not yet tracked."""
+        new_ids = [i for i in inst_ids if i not in self._subscribed]
+        if not new_ids:
+            return
+        self._subscribed.update(new_ids)
+        if self._ws is not None:
+            try:
+                await self._send_subscribe(new_ids)
+            except Exception:
+                pass  # will re-subscribe after reconnect
+
+    async def _send_subscribe(self, inst_ids: List[str]):
+        msg = {
+            "op": "subscribe",
+            "args": [{"channel": "tickers", "instId": i} for i in inst_ids],
+        }
+        await self._ws.send(json.dumps(msg))
+
+    async def start(self):
+        if self._running:
+            return
+        self._running = True
+        asyncio.create_task(self._connect_loop())
+        logger.info("OKX WebSocket client started")
+
+    async def _connect_loop(self):
+        while self._running:
+            try:
+                async with websockets.connect(
+                    self.WS_URL,
+                    ping_interval=20,
+                    ping_timeout=10,
+                    close_timeout=5,
+                ) as ws:
+                    self._ws = ws
+                    logger.info("OKX WebSocket connected")
+                    if self._subscribed:
+                        await self._send_subscribe(list(self._subscribed))
+                    async for raw in ws:
+                        try:
+                            data = json.loads(raw)
+                            if data.get("event"):
+                                continue  # subscribe confirm / error
+                            if data.get("arg", {}).get("channel") == "tickers":
+                                for t in data.get("data", []):
+                                    inst = t.get("instId", "")
+                                    last = t.get("last") or t.get("lastPr") or "0"
+                                    if inst and last:
+                                        self._prices[inst] = float(last)
+                        except Exception:
+                            pass
+            except Exception as e:
+                logger.warning(f"OKX WS error: {e}, reconnecting in 5s…")
+                self._ws = None
+                await asyncio.sleep(5)
+
+
+# Global OKX WebSocket client (singleton, started on server startup)
+okx_ws = OKXWebSocketClient()
 
 
 # ── OKX helpers (used by funding rate, klines, ticker) ────────────────────────
@@ -106,15 +190,18 @@ async def get_price_data(symbol: str, interval: str = "1h") -> Dict:
                     raise RuntimeError(f"OKX candles error: {kdata.get('msg', kdata)}")
                 klines = list(reversed(kdata.get("data", [])))  # oldest-first for indicator math
 
-                # Current price from ticker
-                tick_resp = await client.get(
-                    "https://www.okx.com/api/v5/market/ticker",
-                    params={"instId": inst_id},
-                )
-                tdata = tick_resp.json()
-                current_price = 0.0
-                if str(tdata.get("code")) == "0" and tdata.get("data"):
-                    current_price = float(tdata["data"][0].get("last", 0) or 0)
+                # Current price — try WS cache first, REST fallback
+                await okx_ws.ensure_subscribed([inst_id])
+                current_price = okx_ws.get_price(inst_id)
+                if current_price == 0:
+                    tick_resp = await client.get(
+                        "https://www.okx.com/api/v5/market/ticker",
+                        params={"instId": inst_id},
+                    )
+                    tdata = tick_resp.json()
+                    if str(tdata.get("code")) == "0" and tdata.get("data"):
+                        current_price = float(tdata["data"][0].get("last", 0) or 0)
+                        okx_ws._prices[inst_id] = current_price
 
                 if klines:
                     closes = [float(k[4]) for k in klines]
@@ -153,10 +240,17 @@ async def get_price_data(symbol: str, interval: str = "1h") -> Dict:
     }
 
 
-# ── Current Price (fast, OKX) ─────────────────────────────────────────────────
+# ── Current Price (OKX WS first, REST fallback) ───────────────────────────────
 async def get_current_price(symbol: str) -> float:
-    """Fast price fetch for position monitoring (OKX SWAP ticker)."""
+    """Fast price fetch: WS cache first, OKX REST fallback."""
     inst_id = _to_okx_inst(symbol)
+    # Ensure WS is subscribed for this instrument
+    await okx_ws.ensure_subscribed([inst_id])
+    # Try WS cache first
+    ws_price = okx_ws.get_price(inst_id)
+    if ws_price > 0:
+        return ws_price
+    # REST fallback
     try:
         async with httpx.AsyncClient(timeout=5) as client:
             resp = await client.get(
@@ -165,7 +259,10 @@ async def get_current_price(symbol: str) -> float:
             )
             data = resp.json()
             if str(data.get("code")) == "0" and data.get("data"):
-                return float(data["data"][0].get("last", 0) or 0)
+                price = float(data["data"][0].get("last", 0) or 0)
+                if price > 0:
+                    okx_ws._prices[inst_id] = price  # seed cache
+                return price
     except Exception as e:
         logger.warning(f"OKX current price fetch failed for {symbol}: {e}")
     return 0.0
