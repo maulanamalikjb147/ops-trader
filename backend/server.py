@@ -500,6 +500,7 @@ async def bot_status(request: Request):
     pipeline = [{"$match": {"status": "open"}}, {"$group": {"_id": None, "total": {"$sum": "$margin"}}}]
     res = await db.signals.aggregate(pipeline).to_list(1)
     total_margin = res[0]["total"] if res else 0
+    from data_fetcher import okx_ws
     return {
         "paused": cfg.get("is_paused", False) if cfg else False,
         "active_mode": cfg.get("active_mode", "demo") if cfg else "demo",
@@ -508,6 +509,8 @@ async def bot_status(request: Request):
         "ws_clients": len(ws_manager.active),
         "telegram_enabled": telegram_bot.enabled,
         "notion_enabled": notion_sync.enabled,
+        "okx_ws_connected": okx_ws._ws is not None,
+        "okx_ws_subscribed": len(okx_ws._subscribed),
     }
 
 
@@ -520,8 +523,8 @@ async def scan_now(request: Request, mode: Optional[str] = None):
 
 
 @api.get("/market/top-pairs")
-async def get_top_pairs(request: Request, exchange: str = "binance", limit: int = 50):
-    """Fetch top trading pairs by 24h volume from exchange."""
+async def get_top_pairs(request: Request, exchange: str = "okx", limit: int = 50):
+    """Fetch top trading pairs by 24h volume from OKX (exchange param ignored, always OKX)."""
     await get_current_user(request, db)
     from market_scanner import get_top_pairs
     pairs = await get_top_pairs(exchange, limit)
