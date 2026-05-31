@@ -149,24 +149,16 @@ async def login(body: LoginRequest, response: Response):
 
 @api.post("/auth/register")
 async def register(body: RegisterRequest, request: Request, response: Response):
-    # Check if caller is admin for role assignment
-    caller = None
-    try:
-        caller = await get_current_user(request, db)
-    except Exception:
-        pass
-    role = "user"
-    if caller and caller.get("role") == "admin" and body.role in ["admin", "user"]:
-        role = body.role
+    """Admin-only: create additional users. Public registration is disabled."""
+    caller = await get_current_user(request, db)
+    if caller.get("role") != "admin":
+        raise HTTPException(status_code=403, detail="Only admins can create accounts. Use the seeded admin login.")
+    role = body.role if body.role in ["admin", "user"] else "user"
 
     if await db.users.find_one({"username": body.username}):
         raise HTTPException(status_code=400, detail="Username already exists")
     user = User(username=body.username, password_hash=hash_password(body.password), role=role)
     await db.users.insert_one(user.model_dump())
-    access = create_access_token(user.id, user.username)
-    refresh = create_refresh_token(user.id)
-    response.set_cookie("access_token", access, httponly=True, samesite="lax", max_age=86400)
-    response.set_cookie("refresh_token", refresh, httponly=True, samesite="lax", max_age=604800)
     return {"id": user.id, "username": user.username, "role": user.role}
 
 
@@ -558,6 +550,36 @@ async def notion_daily_summary_now(request: Request):
     await get_current_user(request, db)
     from scheduler import compute_and_send_daily_summary
     return await compute_and_send_daily_summary(db)
+
+
+@api.post("/notion/example-summary")
+async def notion_example_summary(request: Request):
+    """Create a SAMPLE daily summary row in Notion (mock data) to preview formatting."""
+    await get_current_user(request, db)
+    if not notion_sync.enabled:
+        raise HTTPException(status_code=400, detail="Notion is not configured. Save API key and run AUTO-CREATE DATABASE first.")
+    sample = {
+        "date": datetime.now(timezone.utc).strftime("%Y-%m-%d"),
+        "total_signals": 8,
+        "wins": 6,
+        "losses": 2,
+        "net_pnl": 142.75,
+        "win_rate": 75.0,
+    }
+    page_id = await notion_sync.create_daily_summary(sample)
+    if not page_id:
+        raise HTTPException(status_code=500, detail="Failed to create example summary in Notion. Check connection.")
+    return {"ok": True, "notion_page_id": page_id, "sample": sample}
+
+
+@api.post("/telegram/test")
+async def telegram_test(request: Request):
+    """Send a test message to Telegram to verify bot token + chat_id are correct."""
+    await get_current_user(request, db)
+    cfg = await db.bot_config.find_one({}) or {}
+    from telegram_bot import TelegramBot
+    tester = TelegramBot(cfg.get("telegram_token", ""), cfg.get("telegram_chat_id", ""))
+    return await tester.send_test_message()
 
 
 # ═══════════════════════════════════════════════════════════════════════════════

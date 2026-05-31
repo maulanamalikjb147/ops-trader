@@ -5,12 +5,8 @@ import axios from "axios";
 const API = `${process.env.REACT_APP_BACKEND_URL || ""}/api`;
 
 const EXCHANGE_OPTIONS = [
-  { name: "demo", tag: "DEMO", mode: "demo", description: "Paper trading (no real API)" },
-  { name: "bybit_testnet", tag: "BYBIT TESTNET", mode: "demo", description: "Bybit testnet" },
-  { name: "binance", tag: "BINANCE", mode: "live", description: "Binance live" },
-  { name: "bybit", tag: "BYBIT", mode: "live", description: "Bybit live" },
-  { name: "okx", tag: "OKX", mode: "live", description: "OKX live" },
-  { name: "bitget", tag: "BITGET", mode: "live", description: "Bitget live" },
+  { name: "demo", tag: "DEMO (OKX data, simulated)", mode: "demo", description: "Paper trading using OKX market data" },
+  { name: "okx", tag: "OKX LIVE", mode: "live", description: "OKX real futures trading" },
 ];
 
 const TABS = ["BOT CONFIG", "EXCHANGES", "INTEGRATIONS", "CONTROLS"];
@@ -230,6 +226,7 @@ export default function Settings() {
               <Section title="TELEGRAM BOT">
                 <ApiKeyField label="Bot Token" value={config.telegram_token || ""} onChange={(v) => setConfig({ ...config, telegram_token: v })} placeholder="123456789:ABCdef..." testId="telegram-token" />
                 <ApiKeyField label="Chat ID" value={config.telegram_chat_id || ""} onChange={(v) => setConfig({ ...config, telegram_chat_id: v })} placeholder="-100123456789" testId="telegram-chat-id" />
+                <TelegramTest />
                 <a href="https://t.me/BotFather" target="_blank" rel="noreferrer" className="text-[10px] text-[#00d4ff]">Get token from @BotFather on Telegram</a>
               </Section>
               <Section title="NOTION DATABASE">
@@ -750,6 +747,18 @@ function NotionAutoSetup({ config, onUpdate }) {
     setSummarizing(false);
   };
 
+  const triggerExampleSummary = async () => {
+    setSummarizing(true);
+    setResult(null);
+    try {
+      const { data } = await axios.post(`${API}/notion/example-summary`, {}, { withCredentials: true });
+      setResult({ type: "ok", msg: `Example summary row created in Notion! Preview: ${data.sample.total_signals} trades, ${data.sample.wins}W/${data.sample.losses}L, ${data.sample.win_rate}% WR, $${data.sample.net_pnl}` });
+    } catch (e) {
+      setResult({ type: "err", msg: e?.response?.data?.detail || e.message });
+    }
+    setSummarizing(false);
+  };
+
   if (!keyConfigured) {
     return (
       <div className="text-[10px] text-[#8a9bc2] p-2" style={{ border: "1px dashed #1a2040", background: "#0a0e1a" }} data-testid="notion-setup-hint">
@@ -802,13 +811,24 @@ function NotionAutoSetup({ config, onUpdate }) {
         </button>
         {dbConfigured && (
           <button
+            onClick={triggerExampleSummary}
+            disabled={summarizing}
+            data-testid="notion-example-summary-btn"
+            className="text-[10px] px-2 py-1 flex-1 disabled:opacity-50"
+            style={{ border: "1px solid #8a9bc2", color: "#e0e8ff" }}
+          >
+            {summarizing ? "SENDING..." : "📝 EXAMPLE SUMMARY"}
+          </button>
+        )}
+        {dbConfigured && (
+          <button
             onClick={triggerDailySummary}
             disabled={summarizing}
             data-testid="notion-daily-summary-btn"
             className="text-[10px] px-2 py-1 flex-1 disabled:opacity-50"
             style={{ border: "1px solid #00ff88", color: "#00ff88" }}
           >
-            {summarizing ? "SENDING..." : "📊 SEND DAILY SUMMARY NOW"}
+            {summarizing ? "SENDING..." : "📊 DAILY NOW"}
           </button>
         )}
       </div>
@@ -824,6 +844,52 @@ function NotionAutoSetup({ config, onUpdate }) {
       <div className="text-[9px] text-[#8a9bc2] mt-1 leading-relaxed">
         ℹ Daily summary will be auto-sent to Notion + Telegram at <span className="text-[#00d4ff]">23:59 UTC</span> every day.
       </div>
+    </div>
+  );
+}
+
+
+function TelegramTest() {
+  const [testing, setTesting] = useState(false);
+  const [result, setResult] = useState(null);
+
+  const sendTest = async () => {
+    setTesting(true);
+    setResult(null);
+    try {
+      const { data } = await axios.post(`${API}/telegram/test`, {}, { withCredentials: true });
+      setResult({
+        type: data.ok ? "ok" : "err",
+        msg: data.ok
+          ? `Test message sent successfully! Check your Telegram (message_id: ${data.message_id})`
+          : data.error,
+      });
+    } catch (e) {
+      setResult({ type: "err", msg: e?.response?.data?.detail || e.message });
+    }
+    setTesting(false);
+  };
+
+  return (
+    <div className="space-y-1">
+      <button
+        onClick={sendTest}
+        disabled={testing}
+        data-testid="telegram-test-btn"
+        className="text-[10px] px-2 py-1.5 w-full disabled:opacity-50"
+        style={{ border: "1px solid #00d4ff", color: "#00d4ff" }}
+      >
+        {testing ? "SENDING TEST..." : "📩 SEND TEST MESSAGE"}
+      </button>
+      {result && (
+        <div
+          className={`text-[10px] leading-relaxed p-2 ${result.type === "ok" ? "text-[#00ff88]" : "text-[#ff3366]"}`}
+          style={{ background: "#0a0e1a", border: `1px solid ${result.type === "ok" ? "#00ff8855" : "#ff336655"}` }}
+          data-testid="telegram-test-result"
+        >
+          {result.type === "ok" ? "✓ " : "✗ "}{result.msg}
+        </div>
+      )}
     </div>
   );
 }

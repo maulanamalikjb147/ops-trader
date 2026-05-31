@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Link, useNavigate } from "react-router-dom";
+import { useNavigate } from "react-router-dom";
 import axios from "axios";
 import useStore from "@/store/useStore";
 
@@ -85,9 +85,8 @@ export default function Login() {
           </button>
         </form>
 
-        <div className="mt-4 text-center">
-          <span className="text-[#8a9bc2] text-xs">No account? </span>
-          <Link to="/register" className="text-xs text-[#00d4ff]" data-testid="goto-register">Register</Link>
+        <div className="mt-4 text-center text-[10px] text-[#8a9bc2]">
+          Single-user system. Contact admin for additional accounts.
         </div>
       </div>
     </div>

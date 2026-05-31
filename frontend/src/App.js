@@ -2,7 +2,6 @@ import { useEffect } from "react";
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import useStore from "@/store/useStore";
 import Login from "@/pages/Login";
-import Register from "@/pages/Register";
 import Dashboard from "@/pages/Dashboard";
 import Signals from "@/pages/Signals";
 import Performance from "@/pages/Performance";
@@ -45,7 +44,6 @@ export default function App() {
     <BrowserRouter>
       <Routes>
         <Route path="/login" element={<Login />} />
-        <Route path="/register" element={<Register />} />
         <Route path="/" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
         <Route path="/signals" element={<ProtectedRoute><Signals /></ProtectedRoute>} />
         <Route path="/performance" element={<ProtectedRoute><Performance /></ProtectedRoute>} />

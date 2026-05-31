@@ -10,7 +10,7 @@ const API = `${process.env.REACT_APP_BACKEND_URL || ""}/api`;
 const PAIRS = ["BTC/USDT", "ETH/USDT", "SOL/USDT", "BNB/USDT", "XRP/USDT"];
 const TIMEFRAMES = ["1m", "5m", "15m", "1h", "4h", "1d"];
 const MODES = ["ALL", "SWING", "SCALP", "HYBRID"];
-const EXCHANGES = ["ALL", "DEMO", "BINANCE", "BYBIT", "OKX", "BITGET"];
+const EXCHANGES = ["ALL", "DEMO", "OKX"];
 
 function TradingViewChart({ pair, timeframe, exchange }) {
   const ref = useRef(null);

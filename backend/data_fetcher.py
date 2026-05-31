@@ -25,6 +25,18 @@ def _cache_set(key: str, value, ttl: int = 60):
     _cache[key] = (value, time.time() + ttl)
 
 
+# ── OKX helpers (used by funding rate, klines, ticker) ────────────────────────
+_OKX_BAR = {"1m": "1m", "5m": "5m", "15m": "15m", "1h": "1H", "4h": "4H", "1d": "1D"}
+
+
+def _to_okx_inst(symbol: str) -> str:
+    """Convert 'BTC/USDT' → 'BTC-USDT-SWAP' (OKX perpetual contract format)."""
+    base_quote = symbol.replace("/", "-")
+    if base_quote.endswith("-SWAP"):
+        return base_quote
+    return f"{base_quote}-SWAP"
+
+
 # ── Fear & Greed ─────────────────────────────────────────────────────────────
 async def get_fear_and_greed() -> Dict:
     cached = _cache_get("fear_greed")
@@ -47,82 +59,88 @@ async def get_fear_and_greed() -> Dict:
     return {"value": 50, "classification": "Neutral"}
 
 
-# ── Funding Rate ──────────────────────────────────────────────────────────────
+# ── Funding Rate (OKX SWAP) ───────────────────────────────────────────────────
 async def get_funding_rate(symbol: str) -> Dict:
     cache_key = f"funding_{symbol}"
     cached = _cache_get(cache_key)
     if cached:
         return cached
-    # Normalize: BTC/USDT -> BTCUSDT
-    clean = symbol.replace("/", "")
+    inst_id = _to_okx_inst(symbol) if "/" in symbol else (symbol if symbol.endswith("-SWAP") else f"{symbol}-USDT-SWAP")
     for attempt in range(3):
         try:
             async with httpx.AsyncClient(timeout=10) as client:
-                url = f"https://api.bybit.com/v5/market/tickers?category=linear&symbol={clean}"
-                resp = await client.get(url)
+                resp = await client.get(
+                    "https://www.okx.com/api/v5/public/funding-rate",
+                    params={"instId": inst_id},
+                )
                 data = resp.json()
-                items = data.get("result", {}).get("list", [])
-                if items:
-                    fr = float(items[0].get("fundingRate", 0))
-                    result = {"funding_rate": fr, "symbol": clean}
+                if str(data.get("code")) == "0" and data.get("data"):
+                    fr = float(data["data"][0].get("fundingRate", 0) or 0)
+                    result = {"funding_rate": fr, "symbol": inst_id}
                     _cache_set(cache_key, result, ttl=300)
                     return result
         except Exception as e:
-            logger.warning(f"Funding rate attempt {attempt+1} failed: {e}")
+            logger.warning(f"OKX funding rate attempt {attempt+1} failed: {e}")
             await asyncio.sleep(1)
-    return {"funding_rate": 0.0, "symbol": clean}
+    return {"funding_rate": 0.0, "symbol": inst_id}
 
 
-# ── Price / OHLCV ─────────────────────────────────────────────────────────────
+# ── Price / OHLCV (OKX SWAP — supports all OKX futures pairs) ─────────────────
 async def get_price_data(symbol: str, interval: str = "1h") -> Dict:
     cache_key = f"price_{symbol}_{interval}"
     cached = _cache_get(cache_key)
     if cached:
         return cached
-    clean = symbol.replace("/", "")
-    # Map interval to Binance interval format
-    interval_map = {"1m": "1m", "5m": "5m", "15m": "15m", "1h": "1h", "4h": "4h", "1d": "1d"}
-    binance_interval = interval_map.get(interval, "1h")
+    inst_id = _to_okx_inst(symbol)
+    bar = _OKX_BAR.get(interval, "1H")
     for attempt in range(3):
         try:
             async with httpx.AsyncClient(timeout=15) as client:
-                # Get klines
-                klines_url = f"https://api.binance.com/api/v3/klines?symbol={clean}&interval={binance_interval}&limit=50"
-                klines_resp = await client.get(klines_url)
-                klines = klines_resp.json()
-                # Get current price
-                price_resp = await client.get(
-                    f"https://api.binance.com/api/v3/ticker/price?symbol={clean}"
+                # OKX candlesticks: returns newest-first, format: [ts, open, high, low, close, vol, volCcy, volCcyQuote, confirm]
+                klines_resp = await client.get(
+                    "https://www.okx.com/api/v5/market/candles",
+                    params={"instId": inst_id, "bar": bar, "limit": 100},
                 )
-                price_data = price_resp.json()
-                current_price = float(price_data.get("price", 0))
+                kdata = klines_resp.json()
+                if str(kdata.get("code")) != "0":
+                    raise RuntimeError(f"OKX candles error: {kdata.get('msg', kdata)}")
+                klines = list(reversed(kdata.get("data", [])))  # oldest-first for indicator math
 
-                if klines and isinstance(klines, list):
+                # Current price from ticker
+                tick_resp = await client.get(
+                    "https://www.okx.com/api/v5/market/ticker",
+                    params={"instId": inst_id},
+                )
+                tdata = tick_resp.json()
+                current_price = 0.0
+                if str(tdata.get("code")) == "0" and tdata.get("data"):
+                    current_price = float(tdata["data"][0].get("last", 0) or 0)
+
+                if klines:
                     closes = [float(k[4]) for k in klines]
                     volumes = [float(k[5]) for k in klines]
-                    # Calculate volume change
                     avg_vol = statistics.mean(volumes[:-1]) if len(volumes) > 1 else volumes[-1]
                     vol_change = ((volumes[-1] - avg_vol) / avg_vol * 100) if avg_vol > 0 else 0
 
-                    # Candle colors (last 5)
                     candle_colors = []
                     for k in klines[-5:]:
                         open_p, close_p = float(k[1]), float(k[4])
                         candle_colors.append("green" if close_p >= open_p else "red")
 
+                    last_k = klines[-1]
                     result = {
-                        "current_price": current_price,
+                        "current_price": current_price or float(last_k[4]),
                         "closes": closes,
                         "volumes": volumes,
                         "volume_change_pct": vol_change,
                         "candle_colors": candle_colors,
-                        "high_24h": float(klines[-1][2]) if klines else 0,
-                        "low_24h": float(klines[-1][3]) if klines else 0,
+                        "high_24h": float(last_k[2]),
+                        "low_24h": float(last_k[3]),
                     }
                     _cache_set(cache_key, result, ttl=60)
                     return result
         except Exception as e:
-            logger.warning(f"Price data attempt {attempt+1} failed: {e}")
+            logger.warning(f"OKX price data attempt {attempt+1} failed for {inst_id}: {e}")
             await asyncio.sleep(1)
     return {
         "current_price": 0,
@@ -135,20 +153,22 @@ async def get_price_data(symbol: str, interval: str = "1h") -> Dict:
     }
 
 
-# ── Current Price (fast) ──────────────────────────────────────────────────────
+# ── Current Price (fast, OKX) ─────────────────────────────────────────────────
 async def get_current_price(symbol: str) -> float:
-    """Fast price fetch for position monitoring."""
-    clean = symbol.replace("/", "")
+    """Fast price fetch for position monitoring (OKX SWAP ticker)."""
+    inst_id = _to_okx_inst(symbol)
     try:
         async with httpx.AsyncClient(timeout=5) as client:
             resp = await client.get(
-                f"https://api.binance.com/api/v3/ticker/price?symbol={clean}"
+                "https://www.okx.com/api/v5/market/ticker",
+                params={"instId": inst_id},
             )
             data = resp.json()
-            return float(data.get("price", 0))
+            if str(data.get("code")) == "0" and data.get("data"):
+                return float(data["data"][0].get("last", 0) or 0)
     except Exception as e:
-        logger.warning(f"Current price fetch failed for {symbol}: {e}")
-        return 0.0
+        logger.warning(f"OKX current price fetch failed for {symbol}: {e}")
+    return 0.0
 
 
 # ── Token Info (CoinGecko) ────────────────────────────────────────────────────

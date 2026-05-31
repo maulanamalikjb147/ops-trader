@@ -154,6 +154,31 @@ class TelegramBot:
         text = f"<b>⚠️ SYSTEM ALERT</b>\n\n{message}"
         await self._send(text)
 
+    async def send_test_message(self) -> dict:
+        """Send a test message to verify token + chat_id are correct.
+        Returns dict with success/error."""
+        if not self.token:
+            return {"ok": False, "error": "Bot token not configured"}
+        if not self.chat_id:
+            return {"ok": False, "error": "Chat ID not configured"}
+        text = (
+            "<b>✅ SIGNAL BOT — TEST MESSAGE</b>\n\n"
+            "Connection working! Your bot can send notifications.\n\n"
+            "<i>You will receive trade signals, BEP/TP/SL alerts, and daily summaries here.</i>"
+        )
+        try:
+            async with httpx.AsyncClient(timeout=10) as client:
+                resp = await client.post(
+                    f"https://api.telegram.org/bot{self.token}/sendMessage",
+                    json={"chat_id": self.chat_id, "text": text, "parse_mode": "HTML"},
+                )
+                data = resp.json()
+                if data.get("ok"):
+                    return {"ok": True, "message_id": data["result"]["message_id"]}
+                return {"ok": False, "error": data.get("description", "Unknown error")}
+        except Exception as e:
+            return {"ok": False, "error": str(e)}
+
 
 # Global instance (re-configured from DB settings)
 telegram_bot = TelegramBot()
